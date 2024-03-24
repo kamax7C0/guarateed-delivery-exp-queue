@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:tracing="http://www.mulesoft.org/schema/mule/tracing" xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+	xmlns:mqtt3="http://www.mulesoft.org/schema/mule/mqtt3" xmlns:amqp="http://www.mulesoft.org/schema/mule/amqp"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/amqp http://www.mulesoft.org/schema/mule/amqp/current/mule-amqp.xsd
+http://www.mulesoft.org/schema/mule/mqtt3 http://www.mulesoft.org/schema/mule/mqtt3/current/mule-mqtt3.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+http://www.mulesoft.org/schema/mule/tracing http://www.mulesoft.org/schema/mule/tracing/current/mule-tracing.xsd">
+    <!-- Main Flow -->
+	<flow name="mainFlow" doc:id="e00421e0-4490-4a31-af47-ca3311ff27f2">
+		<http:listener config-ref="HTTP_Listener_config" path="*" doc:name="HTTP 8081:/api">
+			<http:response statusCode="#[vars.httpStatus default 200]">
+				<http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+			</http:response>
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body><![CDATA[#[payload]]]></http:body>
+				<http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+			</http:error-response>
+		</http:listener>
+		<ee:transform doc:name="Normalize Payload" doc:id="cc3d8317-ec30-4e2e-b5c5-17e1ef6e44b8" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	originalPayload: payload,
+	method: attributes.method,
+	path: attributes.maskedRequestPath
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<flow-ref doc:name="Send Postman Echo" doc:id="692b5a18-dac8-46a0-8b00-c2cbd42c8a4e" name="sendPostmanEcho" />
+	</flow>
+    <!-- DLQ Processing Flow -->
+	<flow name="sendPostmanEcho" doc:id="3337003a-ca64-4025-9ccf-bd8d46de2da4">
+		<try doc:name="Try">
+			<http:request method="#[payload.method]" config-ref="HTTP_Request_configuration" path="#[payload.path]" doc:name="SEND Postman Echo" sendCorrelationId="ALWAYS">
+				<http:body><![CDATA[#[payload.originalPayload]]]></http:body>
+			</http:request>
+			<tracing:with-correlation-id doc:name="With CorrelationID" doc:id="c04b90ee-d76f-4ffa-957b-e3908c5247fb" correlationId="#['CORELLATION_ID:' ++ correlationId]">
+				<logger level="INFO" doc:name="Logger" doc:id="dc568c9c-4b28-4980-99a8-4fcb9644add0" message="Request sent to Postman OK" />
+			</tracing:with-correlation-id>
+			<error-handler>
+				<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue">
+					<flow-ref doc:name="Publish For a Retry" doc:id="a86a4f16-a0a5-43c8-ae62-65c5444c6499" name="publishForRetry" />
+					<set-variable value="202" doc:name="202 statusCode" doc:id="48432eae-897d-456b-9c05-be56f0c01eef" variableName="statusCode" />
+					<set-payload value="#['Request accepted and will be processed.']" doc:name="202 Accepted Message" />
+				</on-error-continue>
+			</error-handler>
+		</try>
+	</flow>
+	<flow name="publishForRetry" doc:id="78048826-dad7-4d61-9afc-19ec4e01dd8c">
+		<set-variable value="#[(attributes.properties.all.attempt default 0) + 1]" doc:name="attempt" doc:id="f8164991-08b7-4086-9d6c-383574034a97" variableName="attempt" />
+		<choice doc:name="Choice" doc:id="40021778-6aed-430a-9387-7bb3eaba2fd5">
+						<when expression="#[vars.attempt &lt;= 3]">
+							<set-variable value="#[%dw 2.0&#10;import calculateExponentialBackoff from backOffFunctions&#10;---&#10;calculateExponentialBackoff(vars.attempt, 1000, 2)]" doc:name="deliveryDelay" doc:id="c220bd3c-837a-4e40-9683-8d7fe7948e40" variableName="deliveryDelay" />
+							<logger level="WARN" doc:name="WARN Re-Delivery" doc:id="9eb50b8b-de51-4964-8925-e9c9f0dec285" message="#['Transient error occurred. Request set for re-delivery in: ' ++ vars.deliveryDelay ++ ' MS.']" />
+							<jms:publish doc:name="Publish" doc:id="54a8d8a4-d2d6-49aa-91d0-cb747ce70ddc" config-ref="JMS_Config" destination="backoffQueue" persistentDelivery="true" deliveryDelayUnit="MILLISECONDS" deliveryDelay="#[vars.deliveryDelay]" sendCorrelationId="ALWAYS">
+						<jms:message>
+							<jms:properties><![CDATA[#[%dw 2.0
+output application/json
+---  
+{
+	"attempt": vars.attempt
+}]]]></jms:properties>
+						</jms:message>
+		</jms:publish>
+							<logger level="INFO" doc:name="INFO Published for Re-Delivery" doc:id="f198aed8-6c69-416d-8df3-abcdffdc4d62" message="#['Request ' ++ correlationId ++ ' scheduled for re-delivey.']" />
+						</when>
+						<otherwise>
+							<logger message="#['Re-Delivery failed for Event: ' ++ correlationId]" level="ERROR" doc:name="Log Retry Failure - PUT TO DLQ" />
+						</otherwise>
+					</choice>
+	</flow>
+	<flow name="onRetryFlow" doc:id="965ade61-050c-42ef-8271-50441d266a81">
+		<jms:listener doc:name="On New Delivery Attempt" doc:id="007d5ca1-bac9-46af-bd0e-0ce087067d11" config-ref="JMS_Config" destination="backoffQueue" ackMode="IMMEDIATE" numberOfConsumers="1">
+			<jms:consumer-type >
+				<jms:queue-consumer />
+			</jms:consumer-type>
+			<jms:response sendCorrelationId="ALWAYS" />
+		</jms:listener>
+		<logger level="INFO" doc:name="Logger" doc:id="03cf8e9e-106d-43be-a896-7db7e94fa73b" message="#['The message ' ++ correlationId as String ++ 'is being re-delivered. This is an attempt no. ' ++ (attributes.properties.all.attempt default 0) as String]" />
+		<flow-ref doc:name="Send Postman Echo" doc:id="e0590756-e803-4597-b55e-1d4a76c76d46" name="sendPostmanEcho" />
+	</flow>
+
+</mule>

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:spring="http://www.mulesoft.org/schema/mule/spring" xmlns:tracing="http://www.mulesoft.org/schema/mule/tracing"
+	xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns:mqtt3="http://www.mulesoft.org/schema/mule/mqtt3"
+	xmlns:amqp="http://www.mulesoft.org/schema/mule/amqp"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/amqp http://www.mulesoft.org/schema/mule/amqp/current/mule-amqp.xsd
+http://www.mulesoft.org/schema/mule/mqtt3 http://www.mulesoft.org/schema/mule/mqtt3/current/mule-mqtt3.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+http://www.mulesoft.org/schema/mule/tracing http://www.mulesoft.org/schema/mule/tracing/current/mule-tracing.xsd
+http://www.mulesoft.org/schema/mule/spring http://www.mulesoft.org/schema/mule/spring/current/mule-spring.xsd">
+    <!-- Main Flow -->
+	<flow name="mainFlowActiveMQ" doc:id="e00421e0-4490-4a31-af47-ca3311ff27f2">
+		<http:listener config-ref="HTTP_Listener_config_2" path="*" doc:name="HTTP 8082:/api">
+			<http:response statusCode="#[vars.httpStatus default 200]">
+				<http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+			</http:response>
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body><![CDATA[#[payload]]]></http:body>
+				<http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+			</http:error-response>
+		</http:listener>
+		<ee:transform doc:name="Normalize Payload" doc:id="cc3d8317-ec30-4e2e-b5c5-17e1ef6e44b8" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	originalPayload: payload,
+	method: attributes.method,
+	path: attributes.maskedRequestPath
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<jms:publish doc:name="Publish for Delivery" doc:id="54a8d8a4-d2d6-49aa-91d0-cb747ce70ddc" config-ref="JMS_Config" destination="exponentialBackoffQueue" persistentDelivery="true" sendCorrelationId="ALWAYS">
+		</jms:publish>
+		<set-variable value="202" doc:name="202 statusCode" doc:id="48432eae-897d-456b-9c05-be56f0c01eef" variableName="statusCode" />
+		<set-payload value="#['Request accepted and will be processed.']" doc:name="202 Accepted Message" />
+	</flow>
+    <!-- DLQ Processing Flow -->
+	<flow name="onDeliveryFlowActiveMQ" doc:id="965ade61-050c-42ef-8271-50441d266a81">
+		<jms:listener doc:name="On Delivery Attempt" doc:id="007d5ca1-bac9-46af-bd0e-0ce087067d11" config-ref="JMS_Config" destination="exponentialBackoffQueue" ackMode="MANUAL" numberOfConsumers="1" transactionalAction="ALWAYS_BEGIN">
+			<jms:consumer-type>
+				<jms:queue-consumer />
+			</jms:consumer-type>
+			<jms:response sendCorrelationId="ALWAYS" />
+		</jms:listener>
+		<logger level="INFO" doc:name="Logger" doc:id="03cf8e9e-106d-43be-a896-7db7e94fa73b" message="#['The message ' ++ correlationId as String ++ 'is being re-delivered. This is an attempt no. ' ++ (attributes.properties.all.JMSXDeliveryCount default 0) as String]" />
+		<flow-ref doc:name="Send Postman Echo" doc:id="e0590756-e803-4597-b55e-1d4a76c76d46" name="sendPostmanEchoActiveMQ" />
+		<jms:ack doc:name="Ack" doc:id="8dc3dbf7-3b1d-4d70-89e8-1460cb74b6da" ackId="ok" />
+		<error-handler>
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="c2064894-30ae-4ebf-a3f4-00296034cda1">
+				<logger message="#['Re-Delivery failed for Event: ' ++ correlationId]" level="ERROR" doc:name="Log Retry Failure - PUT TO DLQ" />
+			</on-error-propagate>
+		</error-handler>
+	</flow>
+	<flow name="sendPostmanEchoActiveMQ" doc:id="3337003a-ca64-4025-9ccf-bd8d46de2da4">
+		<http:request method="#[payload.method]" config-ref="HTTP_Request_configuration" path="#[payload.path]" doc:name="SEND Postman Echo" sendCorrelationId="ALWAYS">
+				<http:body><![CDATA[#[payload.originalPayload]]]></http:body>
+			</http:request>
+		<logger level="INFO" doc:name="Logger" doc:id="dc568c9c-4b28-4980-99a8-4fcb9644add0" message="Request sent to Postman OK" />
+	</flow>
+
+</mule>

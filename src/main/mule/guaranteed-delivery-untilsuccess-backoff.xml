@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:untilsuccessfulfailfast="http://www.mulesoft.org/schema/mule/untilsuccessfulfailfast" xmlns:spring="http://www.mulesoft.org/schema/mule/spring"
+	xmlns:tracing="http://www.mulesoft.org/schema/mule/tracing" xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+	xmlns:mqtt3="http://www.mulesoft.org/schema/mule/mqtt3"
+	xmlns:amqp="http://www.mulesoft.org/schema/mule/amqp" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/amqp http://www.mulesoft.org/schema/mule/amqp/current/mule-amqp.xsd
+http://www.mulesoft.org/schema/mule/mqtt3 http://www.mulesoft.org/schema/mule/mqtt3/current/mule-mqtt3.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+http://www.mulesoft.org/schema/mule/tracing http://www.mulesoft.org/schema/mule/tracing/current/mule-tracing.xsd
+http://www.mulesoft.org/schema/mule/spring http://www.mulesoft.org/schema/mule/spring/current/mule-spring.xsd
+http://www.mulesoft.org/schema/mule/untilsuccessfulfailfast http://www.mulesoft.org/schema/mule/untilsuccessfulfailfast/current/mule-untilsuccessfulfailfast.xsd">
+    <!-- Main Flow -->
+	<flow name="mainFlowUntillSucceessful" doc:id="e00421e0-4490-4a31-af47-ca3311ff27f2">
+		<http:listener config-ref="HTTP_Listener_config_3" path="*" doc:name="HTTP 8083:/api">
+			<http:response statusCode="#[vars.httpStatus default 200]">
+				<http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+			</http:response>
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body><![CDATA[#[payload]]]></http:body>
+				<http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+			</http:error-response>
+		</http:listener>
+		<ee:transform doc:name="Normalize Payload" doc:id="cc3d8317-ec30-4e2e-b5c5-17e1ef6e44b8" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	originalPayload: payload,
+	method: attributes.method,
+	path: attributes.maskedRequestPath
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="25d6b1bc-9838-4fdc-aed9-8711dea7f95b" message="I'm about to start sending the request to Postman Echo"/>
+		<untilsuccessfulfailfast:repeat-until-successful-ff doc:name="Repeat until successful ff" doc:id="648737e6-9555-4aae-be0e-950ee63a6b79" numberOfRetries="3" initialDelay="1000" followUpDelay="#[lastDelay * 3]">
+			<http:request method="#[payload.method]" config-ref="HTTP_Request_configuration" path="#[payload.path]" doc:name="SEND Postman Echo" sendCorrelationId="ALWAYS">
+				<http:body><![CDATA[#[payload.originalPayload]]]></http:body>
+			</http:request>
+			<logger level="INFO" doc:name="Logger" doc:id="dc568c9c-4b28-4980-99a8-4fcb9644add0" message="Request sent to Postman OK" />
+		</untilsuccessfulfailfast:repeat-until-successful-ff>
+	</flow>
+    <!-- DLQ Processing Flow -->
+
+</mule>

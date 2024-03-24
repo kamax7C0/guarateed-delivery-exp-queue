@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:spring="http://www.mulesoft.org/schema/mule/spring" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd 
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd 
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/spring
+        http://www.mulesoft.org/schema/mule/spring/current/mule-spring.xsd ">
+
+	<!--  spring:config name="springConfig" files="beans.xml" / -->
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config"
+		doc:id="f804228c-ffe0-42e9-be94-83843716c59b" basePath="/api">
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<http:listener-config name="HTTP_Listener_config_2" doc:name="HTTP Listener config"
+		doc:id="976cb491-d222-46d9-8ffa-2077f4a0944d" basePath="/api">
+		<http:listener-connection host="0.0.0.0" port="8082" />
+	</http:listener-config>
+	<http:listener-config name="HTTP_Listener_config_3" doc:name="HTTP Listener config"
+		doc:id="0b8981e3-f11a-45d7-8f89-3535150feca6" basePath="/api">
+		<http:listener-connection host="0.0.0.0" port="8083" />
+	</http:listener-config>
+
+	<http:request-config name="HTTP_Request_configuration" doc:name="HTTP Request configuration">
+		<http:request-connection host="postman-echo.com" protocol="HTTPS" />
+	</http:request-config>
+	<jms:config name="JMS_Config" doc:name="JMS ConfigDoc" doc:id="6ec23197-f272-4e0a-a38c-e8aeedef2672">
+		<jms:generic-connection specification="JMS_2_0" username="theuser" password="abc123poi!">
+			<jms:connection-factory>
+				<jms:jndi-connection-factory connectionFactoryJndiName="ConnectionFactory">
+					<jms:name-resolver-builder
+						jndiInitialContextFactory="org.apache.activemq.artemis.jndi.ActiveMQInitialContextFactory"
+						jndiProviderUrl="tcp://localhost:61616?broker.persistent=true&amp;broker.useJmx=false">
+						<jms:provider-properties>
+							<jms:provider-property key="queue.jndi-queue-in" value="in.queue" />
+							<jms:provider-property key="topic.jndi-topic-in" value="in.topic" />
+						</jms:provider-properties>
+					</jms:name-resolver-builder>
+				</jms:jndi-connection-factory>
+			</jms:connection-factory>
+		</jms:generic-connection>
+	</jms:config>
+</mule>

@@ -1,0 +1,34 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<types:mule xmlns:types="http://www.mulesoft.org/schema/mule/types">
+  <types:catalog>
+    <types:type name="RequestPayload" format="json">
+      <types:shape format="weave" example="examples/RequestPayload.json"><![CDATA[%dw 2.0
+
+type RequestPayload = {|
+  originalPayload: String, 
+  method: String, 
+  path: String
+|} {"example": "{\\\"originalPayload\\\":\\\"Hello There!\\\",\\\"method\\\":\\\"GET\\\",\\\"path\\\":\\\"\\/get\\\"}"}
+
+]]></types:shape>
+    </types:type>
+    <types:type name="MainListenerPayload" format="java">
+      <types:shape format="raml"><![CDATA[#%RAML 1.0 DataType
+type: string]]></types:shape>
+    </types:type>
+  </types:catalog>
+  <types:enrichment select="#cc3d8317-ec30-4e2e-b5c5-17e1ef6e44b8">
+    <types:processor-declaration>
+      <types:input-event>
+        <types:message>
+          <types:payload type="MainListenerPayload"/>
+        </types:message>
+      </types:input-event>
+      <types:output-event>
+        <types:message>
+          <types:payload type="RequestPayload"/>
+        </types:message>
+      </types:output-event>
+    </types:processor-declaration>
+  </types:enrichment>
+</types:mule>

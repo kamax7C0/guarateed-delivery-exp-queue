@@ -1,0 +1,33 @@
+<beans xmlns="http://www.springframework.org/schema/beans" xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:jdbc="http://www.springframework.org/schema/jdbc"
+
+	xsi:schemaLocation="http://www.springframework.org/schema/beans
+      http://www.springframework.org/schema/beans/spring-beans-4.2.xsd
+      http://www.springframework.org/schema/jdbc
+      http://www.springframework.org/schema/jdbc/spring-jdbc-4.2.xsd
+      http://www.springframework.org/schema/context
+      http://www.springframework.org/schema/context/spring-context-4.2.xsd
+      http://www.springframework.org/schema/security
+      http://www.springframework.org/schema/security/spring-security-4.2.xsd">
+
+    <!-- ActiveMQ -->
+    <bean class="org.apache.activemq.command.ActiveMQQueue" id="backoffQueueActiveMQ">
+		<constructor-arg index="0" value="backoffQueueActiveMQ"/>
+	</bean>
+	<bean class="org.apache.activemq.RedeliveryPolicy" id="redeliveryPolicy">
+		<property name="maximumRedeliveries" value="3" />
+		<property name="initialRedeliveryDelay" value="0" />
+		<property name="redeliveryDelay" value="2000" />
+		<property name="useExponentialBackOff" value="true" />
+		<property name="backOffMultiplier" value="2" />
+		<property name="destination" ref="backoffQueueActiveMQ" />
+	</bean>
+	<bean class="org.apache.activemq.broker.region.policy.RedeliveryPolicyMap" id="redeliveryPolicyMap">
+		<property name="defaultEntry" ref="redeliveryPolicy" />
+	</bean>
+	<bean class="org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory" id="amqFactory" lazy-init="true">
+		<property name="brokerURL" value="failover:(tcp://localhost:61616?broker.persistent=true&amp;broker.useJmx=false)" />
+		<property name="redeliveryPolicyMap" ref="redeliveryPolicyMap" />
+	</bean>
+
+</beans>
