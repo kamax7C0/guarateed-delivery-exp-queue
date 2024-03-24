@@ -1,0 +1,1 @@
+docker run -e ARTEMIS_USER=theuser -e ARTEMIS_PASSWORD=abc123poi! --name activemqcontainer -it -p 61616:61616 -p 8161:8161 -v ${pwd}/broker:/var/lib/artemis-instance/etc-override apache/activemq-artemis:latest-alpine 
